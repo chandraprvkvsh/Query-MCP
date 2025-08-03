@@ -1,0 +1,7 @@
+fastmcp
+asyncio
+pydantic
+typing-extensions
+pytest 
+pytest-asyncio 
+pytest-cov
