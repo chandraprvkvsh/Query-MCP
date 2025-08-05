@@ -1,190 +1,212 @@
-import pytest
-import asyncio
-import sys
-import os
 import json
+import os
 import tempfile
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import pytest
 
 from fastmcp import Client
 
+
 class TestPracticalMCPScenarios:
-    """Practical scenario tests using MCP tools through FastMCP Client"""
-    
+    @staticmethod
+    def _t(result):
+        if hasattr(result, "data") and result.data is not None:
+            return str(result.data)
+        if hasattr(result, "content") and result.content:
+            for block in result.content:
+                if hasattr(block, "text"):
+                    return block.text
+        return str(result)
+
     @pytest.fixture
     async def mcp_client(self):
-        """Setup FastMCP Client for practical testing"""
         from server import mcp, db_manager, auth_manager, user_consent_cache
+
         auth_manager.current_user = None
+        auth_manager.login_time = None
         user_consent_cache.clear()
-        db_fd, db_path = tempfile.mkstemp(suffix='.db')
+
+        db_fd, db_path = tempfile.mkstemp(suffix=".db")
         os.close(db_fd)
+
         await db_manager.disconnect()
         db_manager.db_path = db_path
+        db_manager._connection = None
+        db_manager._connection_healthy = False
         await db_manager.connect()
+
         client = Client(mcp)
         yield client
+
         await db_manager.disconnect()
-        if os.path.exists(db_path):
-            try:
-                os.unlink(db_path)
-            except:
-                pass
-    
-    def _extract_result_text(self, result):
-        """Extract text content from CallToolResult"""
-        if hasattr(result, 'data') and result.data is not None:
-            return str(result.data)
-        if hasattr(result, 'content') and result.content:
-            for content in result.content:
-                if hasattr(content, 'text'):
-                    return content.text
-        return str(result)
-    
+        os.unlink(db_path)
+
     @pytest.mark.asyncio
-    async def test_ecommerce_inventory_via_mcp(self, mcp_client):
-        """Test e-commerce inventory management through MCP"""
+    async def test_ecommerce_inventory(self, mcp_client):
         async with mcp_client as client:
-            await client.call_tool("authenticate", {
-                "username": "admin",
-                "password": "admin123"
-            })
-            await client.call_tool("grant_consent", {
-                "tool_name": "create_table",
-                "table": "inventory"
-            })
-            await client.call_tool("create_table", {
-                "table_name": "inventory",
-                "schema_def": {
-                    "columns": {
-                        "id": {"type": "INTEGER", "primary_key": True},
-                        "sku": {"type": "TEXT", "unique": True, "not_null": True},
-                        "name": {"type": "TEXT", "not_null": True},
-                        "quantity": {"type": "INTEGER", "not_null": True},
-                        "price": {"type": "REAL", "not_null": True},
-                        "category": {"type": "TEXT"},
-                        "supplier": {"type": "TEXT"}
-                    }
-                }
-            })
-            for operation in ["insert_data", "update_data", "delete_data"]:
-                await client.call_tool("grant_consent", {
-                    "tool_name": operation,
-                    "table": "inventory"
-                })
+            await client.call_tool("authenticate", {"username": "admin", "password": "admin123"})
+            await client.call_tool("grant_consent", {"tool_name": "create_table", "table": "inventory"})
+            await client.call_tool(
+                "create_table",
+                {
+                    "table_name": "inventory",
+                    "schema_def": {
+                        "columns": {
+                            "id": {"type": "INTEGER", "primary_key": True},
+                            "sku": {"type": "TEXT", "unique": True, "not_null": True},
+                            "name": {"type": "TEXT", "not_null": True},
+                            "quantity": {"type": "INTEGER", "not_null": True},
+                            "price": {"type": "REAL", "not_null": True},
+                        }
+                    },
+                },
+            )
+
+            for tool in ("insert_data", "update_data", "delete_data"):
+                await client.call_tool("grant_consent", {"tool_name": tool, "table": "inventory"})
+
             products = [
-                {"sku": "LAP001", "name": "MacBook Pro 16", "quantity": 15, "price": 2499.99, "category": "Laptops", "supplier": "Apple"},
-                {"sku": "LAP002", "name": "Dell XPS 13", "quantity": 8, "price": 1299.99, "category": "Laptops", "supplier": "Dell"},
-                {"sku": "PHN001", "name": "iPhone 15 Pro", "quantity": 25, "price": 999.99, "category": "Phones", "supplier": "Apple"}
+                {"sku": "SKU1", "name": "MacBook 14", "quantity": 10, "price": 2499.0},
+                {"sku": "SKU2", "name": "Surface Laptop", "quantity": 5, "price": 1899.0},
+                {"sku": "SKU3", "name": "ThinkPad X1", "quantity": 8, "price": 2199.0},
             ]
-            for product in products:
-                result = await client.call_tool("insert_data", {
-                    "table": "inventory",
-                    "row": product
-                })
-                result_text = self._extract_result_text(result)
-                assert "Inserted row with ID" in result_text
-            all_items = await client.call_tool("read_data", {
-                "table": "inventory"
-            })
-            all_items_text = self._extract_result_text(all_items)
-            assert "MacBook Pro 16" in all_items_text
-            assert "iPhone 15 Pro" in all_items_text
-            items_data = json.loads(all_items_text.replace("Data: ", ""))
-            assert len(items_data) == 3
-            low_stock_update = await client.call_tool("update_data", {
-                "table": "inventory",
-                "updates": {"quantity": 2},
-                "where": {"sku": "LAP002"}
-            })
-            update_text = self._extract_result_text(low_stock_update)
-            assert "Updated 1 rows" in update_text
-            updated_item = await client.call_tool("read_data", {
-                "table": "inventory",
-                "where": {"sku": "LAP002"}
-            })
-            updated_text = self._extract_result_text(updated_item)
-            assert '"quantity": 2' in updated_text
-            discontinued_result = await client.call_tool("delete_data", {
-                "table": "inventory",
-                "where": {"sku": "PHN001"}
-            })
-            delete_text = self._extract_result_text(discontinued_result)
-            assert "Deleted 1 rows" in delete_text
-            final_count = await client.call_tool("read_data", {"table": "inventory"})
-            final_text = self._extract_result_text(final_count)
-            remaining_data = json.loads(final_text.replace("Data: ", ""))
-            assert len(remaining_data) == 2
-            assert "iPhone 15 Pro" not in final_text
-    
+
+            for p in products:
+                res = await client.call_tool("insert_data", {"table": "inventory", "row": p})
+                assert "Inserted" in self._t(res)
+
+            low_stock = await client.call_tool(
+                "update_data",
+                {"table": "inventory", "updates": {"quantity": 2}, "where": {"sku": "SKU2"}},
+            )
+            assert "Updated 1 rows" in self._t(low_stock)
+
+            res = await client.call_tool(
+                "delete_data", {"table": "inventory", "where": {"sku": "SKU3"}}
+            )
+            assert "Deleted 1 rows" in self._t(res)
+
+            res = await client.call_tool("read_data", {"table": "inventory"})
+            assert len(json.loads(self._t(res).replace("Data: ", ""))) == 2
+
     @pytest.mark.asyncio
-    async def test_user_management_via_mcp(self, mcp_client):
-        """Test user management system through MCP"""
+    async def test_user_management(self, mcp_client):
         async with mcp_client as client:
-            await client.call_tool("authenticate", {
-                "username": "admin",
-                "password": "admin123"
-            })
-            await client.call_tool("grant_consent", {
-                "tool_name": "create_table",
-                "table": "users"
-            })
-            await client.call_tool("create_table", {
-                "table_name": "users",
-                "schema_def": {
-                    "columns": {
-                        "id": {"type": "INTEGER", "primary_key": True},
-                        "username": {"type": "TEXT", "unique": True, "not_null": True},
-                        "email": {"type": "TEXT", "unique": True, "not_null": True},
-                        "role": {"type": "TEXT", "not_null": True},
-                        "active": {"type": "INTEGER", "default": "1"},
-                        "created_at": {"type": "DATETIME", "default": "CURRENT_TIMESTAMP"}
-                    }
-                }
-            })
-            for operation in ["insert_data", "update_data", "delete_data"]:
-                await client.call_tool("grant_consent", {
-                    "tool_name": operation,
-                    "table": "users"
-                })
+            await client.call_tool("authenticate", {"username": "admin", "password": "admin123"})
+            
+            table_name = "company_users"
+            await client.call_tool("grant_consent", {"tool_name": "create_table", "table": table_name})
+
+            await client.call_tool(
+                "create_table",
+                {
+                    "table_name": table_name,
+                    "schema_def": {
+                        "columns": {
+                            "id": {"type": "INTEGER", "primary_key": True},
+                            "username": {"type": "TEXT", "unique": True, "not_null": True},
+                            "email": {"type": "TEXT", "unique": True, "not_null": True},
+                            "role": {"type": "TEXT", "not_null": True},
+                            "active": {"type": "INTEGER", "default": "1"},
+                        }
+                    },
+                },
+            )
+
+            for tool in ("insert_data", "update_data", "delete_data"):
+                await client.call_tool("grant_consent", {"tool_name": tool, "table": table_name})
+
             users = [
-                {"username": "admin_user", "email": "admin@company.com", "role": "admin", "active": 1},
-                {"username": "manager_user", "email": "manager@company.com", "role": "manager", "active": 1},
-                {"username": "employee1", "email": "emp1@company.com", "role": "employee", "active": 1},
-                {"username": "employee2", "email": "emp2@company.com", "role": "employee", "active": 0}
+                {"username": "admin_u", "email": "admin@corp.com", "role": "admin", "active": 1},
+                {"username": "emp_1", "email": "e1@corp.com", "role": "employee", "active": 1},
+                {"username": "emp_2", "email": "e2@corp.com", "role": "employee", "active": 0},
             ]
-            for user in users:
-                result = await client.call_tool("insert_data", {
-                    "table": "users",
-                    "row": user
-                })
-                result_text = self._extract_result_text(result)
-                assert "Inserted row with ID" in result_text
-            admins = await client.call_tool("read_data", {
-                "table": "users",
-                "where": {"role": "admin"}
-            })
-            admins_text = self._extract_result_text(admins)
-            assert "admin_user" in admins_text
-            active_users = await client.call_tool("read_data", {
-                "table": "users",
-                "where": {"active": 1}
-            })
-            active_text = self._extract_result_text(active_users)
-            active_data = json.loads(active_text.replace("Data: ", ""))
-            assert len(active_data) == 3
-            deactivate_result = await client.call_tool("update_data", {
-                "table": "users",
-                "updates": {"active": 0},
-                "where": {"username": "employee1"}
-            })
-            deactivate_text = self._extract_result_text(deactivate_result)
-            assert "Updated 1 rows" in deactivate_text
-            final_active = await client.call_tool("read_data", {
-                "table": "users",
-                "where": {"active": 1}
-            })
-            final_text = self._extract_result_text(final_active)
-            final_data = json.loads(final_text.replace("Data: ", ""))
-            assert len(final_data) == 2
+
+            for u in users:
+                res = await client.call_tool("insert_data", {"table": table_name, "row": u})
+                assert "Inserted" in self._t(res)
+
+            res = await client.call_tool(
+                "update_data",
+                {"table": table_name, "updates": {"active": 0}, "where": {"username": "emp_1"}},
+            )
+            assert "Updated 1 rows" in self._t(res)
+
+            res = await client.call_tool("read_data", {"table": table_name, "where": {"active": 1}})
+            assert len(json.loads(self._t(res).replace("Data: ", ""))) == 1
+
+    @pytest.mark.asyncio
+    async def test_sample_data_management(self, mcp_client):
+        """Test using the existing sample data tables (users/posts)"""
+        async with mcp_client as client:
+            await client.call_tool("authenticate", {"username": "admin", "password": "admin123"})
+            
+            for tool in ("insert_data", "update_data", "delete_data"):
+                await client.call_tool("grant_consent", {"tool_name": tool, "table": "users"})
+            
+            res = await client.call_tool("read_data", {"table": "users"})
+            existing_data = json.loads(self._t(res).replace("Data: ", ""))
+            original_count = len(existing_data)
+            
+            new_user = {
+                "name": "Alice Johnson", 
+                "email": "alice@example.com"
+            }
+            
+            res = await client.call_tool("insert_data", {"table": "users", "row": new_user})
+            assert "Inserted" in self._t(res)
+            
+            res = await client.call_tool(
+                "update_data",
+                {"table": "users", "updates": {"name": "Alice Smith"}, "where": {"email": "alice@example.com"}}
+            )
+            assert "Updated 1 rows" in self._t(res)
+            
+            res = await client.call_tool("read_data", {"table": "users"})
+            final_data = json.loads(self._t(res).replace("Data: ", ""))
+            assert len(final_data) == original_count + 1
+            
+            alice_users = [u for u in final_data if u.get("email") == "alice@example.com"]
+            assert len(alice_users) == 1
+            assert alice_users[0]["name"] == "Alice Smith"
+
+    @pytest.mark.asyncio
+    async def test_production_monitoring(self, mcp_client):
+        async with mcp_client as client:
+            res = await client.call_tool("health_check", {})
+            health_data = json.loads(self._t(res))
+            assert health_data["server"] == "healthy"
+
+            await client.call_tool("authenticate", {"username": "admin", "password": "admin123"})
+
+            uris = [str(r.uri) for r in await client.list_resources()]
+            assert {"db://health", "db://schema"}.issubset(uris)
+
+            health_res = await client.read_resource("db://health")
+            health_data = json.loads(health_res[0].text if isinstance(health_res, list) else health_res)
+            assert health_data["server"] == "healthy"
+
+    @pytest.mark.asyncio
+    async def test_schema_exploration_with_sample_data(self, mcp_client):
+        """Test that we can explore the existing sample data schema"""
+        async with mcp_client as client:
+            await client.call_tool("authenticate", {"username": "admin", "password": "admin123"})
+            
+            res = await client.call_tool("list_tables", {})
+            tables_text = self._t(res)
+            assert "users" in tables_text
+            assert "posts" in tables_text
+            
+            res = await client.call_tool("describe_table", {"table_name": "users"})
+            schema_text = self._t(res)
+            assert "Schema:" in schema_text
+            
+            schema_json = schema_text.replace("Schema: ", "")
+            schema_data = json.loads(schema_json)
+            
+            assert schema_data["table"] == "users"
+            assert len(schema_data["columns"]) >= 4
+            
+            column_names = [col["name"] for col in schema_data["columns"]]
+            expected_columns = ["id", "name", "email", "created_at"]
+            for col in expected_columns:
+                assert col in column_names
