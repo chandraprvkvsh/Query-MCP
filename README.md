@@ -1,6 +1,6 @@
-# QueryMCP
+# Query MCP
 
-QueryMCP is a lightweight custom **MCP Server** that exposes a relational SQLite database as a set of structured tools and resources.  It ships with:
+Query MCP is a lightweight custom **MCP Server** that exposes a relational SQLite database as a set of structured tools and resources.  It ships with:
 
 * FastMCP server wrapper (WebSocket + JSON-RPC).
 * Hardened SQL layer with identifier sanitisation and automatic parameterisation.
@@ -46,7 +46,7 @@ When the server starts it will:
 ## 3 Project Layout
 
 ```
-QueryMCP/
+Query-MCP/
 │
 ├── auth.py              # AuthManager & permission mapping
 ├── database.py          # Async, thread-safe SQLite wrapper
