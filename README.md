@@ -12,7 +12,7 @@ QueryMCP is a lightweight custom **MCP Server** that exposes a relational SQLite
 
 ```bash
 # 1. Clone
-git clone https://github.com/chandraprvkvsh/QueryMCP.git
+git clone https://github.com/chandraprvkvsh/Query-MCP.git
 cd QueryMCP
 
 # 2. Create virtual env (Python 3.9+ recommended)
