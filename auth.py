@@ -15,8 +15,6 @@ class Permission(Enum):
     ADMIN = "admin"
 
 class AuthManager:
-    """Enhanced authentication and authorization manager with session management"""
-    
     def __init__(self, session_timeout: int = 3600):
         self.sessions: Dict[str, Dict] = {}
         self.session_timeout = session_timeout
@@ -34,12 +32,10 @@ class AuthManager:
         self.login_time = None
         
     def _hash_password(self, password: str) -> str:
-        """Hash password with salt"""
         salt = secrets.token_hex(16)
         return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex() + salt
     
     def _verify_password(self, password: str, stored_hash: str) -> bool:
-        """Verify password against stored hash"""
         if len(stored_hash) < 32:
             return False
         hash_part = stored_hash[:-32]
@@ -47,7 +43,6 @@ class AuthManager:
         return hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000).hex() == hash_part
     
     def is_session_valid(self) -> bool:
-        """Check if current session is still valid"""
         if not self.current_user or not self.login_time:
             return False
         if time.time() - self.login_time > self.session_timeout:
@@ -57,7 +52,6 @@ class AuthManager:
         return True
     
     def authenticate(self, username: str, password: str) -> bool:
-        """Authenticate user with session management"""
         if username not in self.users:
             logger.warning(f"Authentication failed: Unknown user {username}")
             return False
@@ -70,7 +64,6 @@ class AuthManager:
         return True
     
     def check_permission(self, required_permission: Permission) -> bool:
-        """Check if current user has required permission"""
         if not self.is_session_valid():
             return False
         user_permissions = self.users[self.current_user]["permissions"]
@@ -80,12 +73,10 @@ class AuthManager:
         return has_permission
     
     def refresh_session(self):
-        """Refresh the current session timestamp"""
         if self.current_user:
             self.login_time = time.time()
     
     def logout(self):
-        """Logout current user"""
         if self.current_user:
             logger.info(f"User {self.current_user} logged out")
             self.current_user = None

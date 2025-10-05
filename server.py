@@ -29,7 +29,6 @@ auth_manager = AuthManager(session_timeout=SESSION_TIMEOUT)
 user_consent_cache: Dict[str, set] = {}
 
 async def ensure_db_initialized():
-    """Ensure database is properly initialized"""
     global db_manager
     
     if db_manager is None:
@@ -49,7 +48,6 @@ async def ensure_db_initialized():
         raise
 
 async def create_sample_data():
-    """Create sample tables and data"""
     try:
         await db_manager.create_table("users", {
             "columns": {
@@ -93,7 +91,6 @@ async def create_sample_data():
         raise
 
 def check_auth_and_consent(tool_name: str, params: Dict = None) -> Optional[str]:
-    """Check authentication and consent for tools"""
     if not auth_manager.is_session_valid():
         return "Authentication required. Use authenticate tool first."
     
@@ -114,7 +111,6 @@ def check_auth_and_consent(tool_name: str, params: Dict = None) -> Optional[str]
 
 @mcp.tool
 def authenticate(username: str, password: str) -> str:
-    """Authenticate with username and password"""
     try:
         if auth_manager.authenticate(username, password):
             return "Authentication successful"
@@ -126,7 +122,6 @@ def authenticate(username: str, password: str) -> str:
 
 @mcp.tool
 def grant_consent(tool_name: str, table: str = "") -> str:
-    """Grant consent for destructive operations"""
     if not auth_manager.is_session_valid():
         return "Authentication required"
     
@@ -145,7 +140,6 @@ def grant_consent(tool_name: str, table: str = "") -> str:
 
 @mcp.tool
 def logout() -> str:
-    """Logout current user"""
     try:
         username = auth_manager.current_user
         auth_manager.logout()
@@ -160,7 +154,6 @@ def logout() -> str:
 
 @mcp.tool
 async def list_tables() -> str:
-    """List all tables in the database"""
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("list_tables")
@@ -176,8 +169,7 @@ async def list_tables() -> str:
         return f"Error: {str(e)}"
 
 @mcp.tool
-async def describe_table(table_name: str) -> str:
-    """Get detailed schema information for a table"""
+async def describe_table(table: str) -> str:
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("describe_table")
@@ -185,17 +177,16 @@ async def describe_table(table_name: str) -> str:
         return auth_error
 
     try:
-        schema = await db_manager.describe_table(table_name)
-        logger.info(f"Described table {table_name} for user {auth_manager.current_user}")
+        schema = await db_manager.describe_table(table)
+        logger.info(f"Described table {table} for user {auth_manager.current_user}")
         return f"Schema: {json.dumps(schema, indent=2)}"
     except Exception as e:
-        logger.error(f"Error describing table {table_name}: {e}")
+        logger.error(f"Error describing table {table}: {e}")
         return f"Error: {str(e)}"
 
 @mcp.tool
 async def read_data(table: str, where: Optional[Dict] = None,
                    limit: Optional[int] = None, order_by: Optional[str] = None) -> str:
-    """Read data from a table with optional filtering"""
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("read_data")
@@ -211,8 +202,7 @@ async def read_data(table: str, where: Optional[Dict] = None,
         return f"Error: {str(e)}"
 
 @mcp.tool
-async def insert_data(table: str, row: Dict[str, Any]) -> str:
-    """Insert a new row into a table"""
+async def insert_data(table: str, data: Dict[str, Any]) -> str:
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("insert_data", {"table": table})
@@ -220,7 +210,7 @@ async def insert_data(table: str, row: Dict[str, Any]) -> str:
         return auth_error
 
     try:
-        row_id = await db_manager.insert_data(table, row)
+        row_id = await db_manager.insert_data(table, data)
         logger.info(f"Inserted data into {table} for user {auth_manager.current_user}")
         return f"Inserted row with ID: {row_id}"
     except Exception as e:
@@ -228,8 +218,7 @@ async def insert_data(table: str, row: Dict[str, Any]) -> str:
         return f"Error: {str(e)}"
 
 @mcp.tool
-async def update_data(table: str, updates: Dict[str, Any], where: Dict[str, Any]) -> str:
-    """Update existing rows in a table"""
+async def update_data(table: str, data: Dict[str, Any], where: Dict[str, Any]) -> str:
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("update_data", {"table": table})
@@ -237,7 +226,7 @@ async def update_data(table: str, updates: Dict[str, Any], where: Dict[str, Any]
         return auth_error
 
     try:
-        count = await db_manager.update_data(table, updates, where)
+        count = await db_manager.update_data(table, data, where)
         logger.info(f"Updated {count} rows in {table} for user {auth_manager.current_user}")
         return f"Updated {count} rows"
     except Exception as e:
@@ -246,7 +235,6 @@ async def update_data(table: str, updates: Dict[str, Any], where: Dict[str, Any]
 
 @mcp.tool
 async def delete_data(table: str, where: Dict[str, Any]) -> str:
-    """Delete rows from a table"""
     await ensure_db_initialized()
     
     auth_error = check_auth_and_consent("delete_data", {"table": table})
@@ -262,42 +250,39 @@ async def delete_data(table: str, where: Dict[str, Any]) -> str:
         return f"Error: {str(e)}"
 
 @mcp.tool
-async def create_table(table_name: str, schema_def: Dict[str, Any]) -> str:
-    """Create a new table with specified schema"""
+async def create_table(table: str, schema_def: Dict[str, Any]) -> str:
     await ensure_db_initialized()
     
-    auth_error = check_auth_and_consent("create_table", {"table": table_name})
+    auth_error = check_auth_and_consent("create_table", {"table": table})
     if auth_error:
         return auth_error
 
     try:
-        await db_manager.create_table(table_name, schema_def)
-        logger.info(f"Created table {table_name} for user {auth_manager.current_user}")
-        return f"Created table: {table_name}"
+        await db_manager.create_table(table, schema_def)
+        logger.info(f"Created table {table} for user {auth_manager.current_user}")
+        return f"Created table: {table}"
     except Exception as e:
-        logger.error(f"Error creating table {table_name}: {e}")
+        logger.error(f"Error creating table {table}: {e}")
         return f"Error: {str(e)}"
 
 @mcp.tool
-async def drop_table(table_name: str) -> str:
-    """Drop an existing table"""
+async def drop_table(table: str) -> str:
     await ensure_db_initialized()
     
-    auth_error = check_auth_and_consent("drop_table", {"table": table_name})
+    auth_error = check_auth_and_consent("drop_table", {"table": table})
     if auth_error:
         return auth_error
 
     try:
-        await db_manager.drop_table(table_name)
-        logger.info(f"Dropped table {table_name} for user {auth_manager.current_user}")
-        return f"Dropped table: {table_name}"
+        await db_manager.drop_table(table)
+        logger.info(f"Dropped table {table} for user {auth_manager.current_user}")
+        return f"Dropped table: {table}"
     except Exception as e:
-        logger.error(f"Error dropping table {table_name}: {e}")
+        logger.error(f"Error dropping table {table}: {e}")
         return f"Error: {str(e)}"
 
 @mcp.tool
 async def health_check() -> str:
-    """Check server and database health"""
     try:
         await ensure_db_initialized()
         db_healthy = await db_manager.health_check()
@@ -315,7 +300,6 @@ async def health_check() -> str:
 
 @mcp.resource("db://schema")
 async def get_database_schema() -> str:
-    """Get complete database schema as JSON"""
     if not auth_manager.is_session_valid():
         return json.dumps({"error": "Authentication required"})
 
@@ -329,7 +313,6 @@ async def get_database_schema() -> str:
 
 @mcp.resource("db://table/{table_name}")
 async def get_table_info(table_name: str) -> str:
-    """Get information about a specific table"""
     if not auth_manager.is_session_valid():
         return json.dumps({"error": "Authentication required"})
 
@@ -343,7 +326,6 @@ async def get_table_info(table_name: str) -> str:
 
 @mcp.resource("db://health")
 async def get_health_status() -> str:
-    """Get server health status"""
     try:
         await ensure_db_initialized()
         db_healthy = await db_manager.health_check()
@@ -356,7 +338,6 @@ async def get_health_status() -> str:
         return json.dumps({"error": f"Health check failed: {str(e)}"})
 
 async def initialize_server():
-    """Initialize database connection and sample data"""
     try:
         await ensure_db_initialized()
         logger.info("MCP Database Server initialized successfully")
@@ -365,7 +346,6 @@ async def initialize_server():
         raise
 
 async def cleanup_server():
-    """Cleanup server resources"""
     global db_manager
     if db_manager:
         await db_manager.disconnect()
